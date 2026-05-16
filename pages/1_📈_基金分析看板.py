@@ -29,7 +29,7 @@ inject_bloomberg_css()
 
 PLOTLY_TEMPLATE = "plotly_dark"
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "wallstreet_data")
-DB_URL = "mysql+pymysql://root:123456@localhost/finance_ai?charset=utf8mb4"
+DB_URL = st.secrets["DB_URL"]
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
 

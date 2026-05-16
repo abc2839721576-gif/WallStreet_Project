@@ -47,7 +47,7 @@ st.markdown("""
 
 PLOTLY_TEMPLATE = "plotly_dark"
 DATA_DIR = "./wallstreet_data"
-DB_URL = "mysql+pymysql://root:123456@localhost/finance_ai?charset=utf8mb4"
+DB_URL = st.secrets["DB_URL"]
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
 
