@@ -26,10 +26,50 @@ st.title("📡 政策雷达站 × 研报智能摘要")
 st.caption("Policy Radar · Research Report NLP Engine | 中英双语情感分析")
 st.markdown("---")
 
+# ── 示例数据（海外服务器兜底用）────────────────────────────────
+def _get_demo_news():
+    """当 AkShare 数据源不可用时，返回高质量的示例财经新闻"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    demo_data = [
+        {"标题": "国务院常务会议：加大宏观政策调节力度，推动经济持续回升向好", "时间": today, "来源": "央视财经新闻", "链接": ""},
+        {"标题": "央行宣布定向降准0.5个百分点，释放长期资金约1万亿元", "时间": today, "来源": "央视财经新闻", "链接": ""},
+        {"标题": "工信部：加快推进新型工业化，培育壮大先进制造业集群", "时间": today, "来源": "央视财经新闻", "链接": ""},
+        {"标题": "半导体行业迎来政策红利：国家集成电路产业基金三期即将落地", "时间": today, "来源": "新浪环球滚动", "链接": ""},
+        {"标题": "宁德时代固态电池量产计划提前，新能源产业链全线上涨", "时间": today, "来源": "新浪环球滚动", "链接": ""},
+        {"标题": "证监会发布新规：优化IPO审核流程，支持科技企业上市融资", "时间": today, "来源": "百度财经", "链接": ""},
+        {"标题": "商务部：中美经贸磋商取得阶段性进展，双方同意继续对话", "时间": today, "来源": "央视财经新闻", "链接": ""},
+        {"标题": "A股三大指数集体收涨，半导体板块领涨，成交额突破万亿", "时间": today, "来源": "新浪环球滚动", "链接": ""},
+        {"标题": "光伏行业整合加速：多家龙头企业宣布扩产计划", "时间": yesterday, "来源": "百度财经", "链接": ""},
+        {"标题": "数字人民币试点范围扩大至全国17个城市，金融科技板块走强", "时间": yesterday, "来源": "央视财经新闻", "链接": ""},
+        {"标题": "国家发改委：推动新基建投资，5G基站建设目标超额完成", "时间": yesterday, "来源": "新浪环球滚动", "链接": ""},
+        {"标题": "稀土管理条例正式实施，新材料板块迎来估值重塑", "时间": yesterday, "来源": "百度财经", "链接": ""},
+        {"标题": "财政部：继续实施减税降费政策，预计全年减负超3万亿元", "时间": yesterday, "来源": "央视财经新闻", "链接": ""},
+        {"标题": "华为发布新一代AI芯片，国产算力替代加速推进", "时间": yesterday, "来源": "新浪环球滚动", "链接": ""},
+        {"标题": "银保监会：引导银行加大对制造业中长期贷款投放力度", "时间": yesterday, "来源": "百度财经", "链接": ""},
+    ]
+    return pd.DataFrame(demo_data)
+
+def _get_demo_reports():
+    """示例研报数据"""
+    demo_reports = [
+        {"股票代码": "300750", "股票名称": "宁德时代", "报告标题": "固态电池量产在即，维持买入评级", "评级": "买入", "机构": "中信证券"},
+        {"股票代码": "600519", "股票名称": "贵州茅台", "报告标题": "高端白酒需求稳健，业绩超预期", "评级": "买入", "机构": "国泰君安"},
+        {"股票代码": "000858", "股票名称": "五粮液", "报告标题": "渠道改革成效显现，盈利能力提升", "评级": "增持", "机构": "华泰证券"},
+        {"股票代码": "002475", "股票名称": "立讯精密", "报告标题": "消费电子复苏叠加汽车业务放量", "评级": "买入", "机构": "海通证券"},
+        {"股票代码": "601012", "股票名称": "隆基绿能", "报告标题": "BC电池技术领先，产能扩张加速", "评级": "增持", "机构": "招商证券"},
+        {"股票代码": "688981", "股票名称": "中芯国际", "报告标题": "成熟制程需求回暖，产能利用率回升", "评级": "买入", "机构": "中金公司"},
+        {"股票代码": "300059", "股票名称": "东方财富", "报告标题": "市场活跃度提升带动经纪业务增长", "评级": "买入", "机构": "广发证券"},
+        {"股票代码": "002594", "股票名称": "比亚迪", "报告标题": "海外市场拓展超预期，新车型周期开启", "评级": "买入", "机构": "申万宏源"},
+        {"股票代码": "603259", "股票名称": "药明康德", "报告标题": "CXO行业见底回升，订单恢复增长", "评级": "增持", "机构": "中信建投"},
+        {"股票代码": "000001", "股票名称": "平安银行", "报告标题": "零售转型深化，资产质量改善", "评级": "增持", "机构": "兴业证券"},
+    ]
+    return pd.DataFrame(demo_reports)
+
 # ── 数据抓取层 ────────────────────────────────────────────────
 @st.cache_data(ttl=1800)
 def load_financial_news():
-    """从多个AkShare接口抓取最新财经新闻 (自动降级)"""
+    """从多个AkShare接口抓取最新财经新闻 (自动降级，海外使用示例数据)"""
     all_news = []
     sources = [
         ("央视财经新闻", lambda: ak.news_cctv(date=datetime.now().strftime("%Y%m%d"))),
@@ -56,22 +96,24 @@ def load_financial_news():
     
     if all_news:
         combined = pd.concat(all_news, ignore_index=True)
-        return combined
-    return None
+        return combined, False  # False = 不是示例数据
+    
+    # 兜底：返回示例数据
+    return _get_demo_news(), True  # True = 是示例数据
 
 @st.cache_data(ttl=3600)
 def load_research_reports():
-    """通过 AkShare 抓取 A 股研报摘要"""
+    """通过 AkShare 抓取 A 股研报摘要（海外自动降级为示例数据）"""
     try:
         df = ak.stock_research_report_em(symbol="最新报告")
-        return df
+        return df, False
     except Exception:
         try:
             # 备用：抓取行业研报
             df = ak.stock_research_report_em(symbol="行业报告")
-            return df
+            return df, False
         except Exception:
-            return None
+            return _get_demo_reports(), True
 
 # ── NLP 处理层 ────────────────────────────────────────────────
 def extract_keywords_tfidf(texts, top_n=15):
@@ -146,7 +188,10 @@ def analyze_sentiment_en(text):
 st.subheader("📰 实时财经政策新闻")
 
 with st.spinner("正在抓取最新财经新闻..."):
-    df_news = load_financial_news()
+    df_news, is_demo_news = load_financial_news()
+
+if is_demo_news:
+    st.info("🌐 当前使用示例数据展示（海外服务器无法连接国内数据源）。在国内运行时将自动切换为实时新闻。")
 
 if df_news is not None and not df_news.empty:
     # 显示新闻列表
@@ -273,7 +318,10 @@ st.subheader("🏦 东方财富研报聚合")
 st.caption("Research Report Aggregator via AkShare | A股最新机构研究报告")
 
 with st.spinner("加载研报数据..."):
-    df_reports = load_research_reports()
+    df_reports, is_demo_reports = load_research_reports()
+
+if is_demo_reports:
+    st.info("🌐 当前使用示例研报数据展示。在国内运行时将自动加载东方财富实时研报。")
 
 if df_reports is not None and not df_reports.empty:
     st.success(f"✅ 已加载 {len(df_reports)} 条研报记录")
@@ -290,3 +338,7 @@ if df_reports is not None and not df_reports.empty:
         st.plotly_chart(fig_rating, use_container_width=True)
 else:
     st.info("研报接口暂时无法访问，这是正常现象（需要特定权限）。您可以在文本框中手动粘贴研报内容进行分析。")
+
+# ── 页脚说明 ──
+st.markdown("---")
+st.caption("💡 提示：本页面在国内网络环境下将自动获取实时数据；海外部署时使用精选示例数据展示功能。")
