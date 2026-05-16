@@ -26,27 +26,57 @@ st.title("📡 政策雷达站 × 研报智能摘要")
 st.caption("Policy Radar · Research Report NLP Engine | 中英双语情感分析")
 st.markdown("---")
 
-# ── 示例数据（海外服务器兜底用）────────────────────────────────
+# ── 国际财经新闻 RSS 抓取（海外服务器真实数据源）──────────────────
+@st.cache_data(ttl=1800)
+def _fetch_rss_news():
+    """从国际财经媒体 RSS 源抓取真实新闻（全球可用，无需 API Key）"""
+    try:
+        import feedparser
+    except ImportError:
+        return None
+
+    rss_feeds = [
+        ("Reuters", "https://feeds.reuters.com/reuters/businessNews"),
+        ("CNBC", "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114"),
+        ("MarketWatch", "https://feeds.marketwatch.com/marketwatch/topstories/"),
+        ("Yahoo Finance", "https://finance.yahoo.com/news/rssindex"),
+    ]
+
+    all_news = []
+    for source_name, feed_url in rss_feeds:
+        try:
+            feed = feedparser.parse(feed_url)
+            if feed.entries:
+                for entry in feed.entries[:8]:
+                    pub_date = ""
+                    if hasattr(entry, 'published'):
+                        pub_date = entry.published[:25]
+                    elif hasattr(entry, 'updated'):
+                        pub_date = entry.updated[:25]
+                    all_news.append({
+                        "标题": entry.get("title", ""),
+                        "时间": pub_date,
+                        "来源": source_name,
+                        "链接": entry.get("link", ""),
+                    })
+                if len(all_news) >= 20:
+                    break
+        except Exception:
+            continue
+
+    if all_news:
+        return pd.DataFrame(all_news)
+    return None
+
 def _get_demo_news():
-    """当 AkShare 数据源不可用时，返回高质量的示例财经新闻"""
+    """所有数据源均不可用时的最终兜底"""
     today = datetime.now().strftime("%Y-%m-%d")
-    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
     demo_data = [
         {"标题": "国务院常务会议：加大宏观政策调节力度，推动经济持续回升向好", "时间": today, "来源": "央视财经新闻", "链接": ""},
         {"标题": "央行宣布定向降准0.5个百分点，释放长期资金约1万亿元", "时间": today, "来源": "央视财经新闻", "链接": ""},
-        {"标题": "工信部：加快推进新型工业化，培育壮大先进制造业集群", "时间": today, "来源": "央视财经新闻", "链接": ""},
         {"标题": "半导体行业迎来政策红利：国家集成电路产业基金三期即将落地", "时间": today, "来源": "新浪环球滚动", "链接": ""},
         {"标题": "宁德时代固态电池量产计划提前，新能源产业链全线上涨", "时间": today, "来源": "新浪环球滚动", "链接": ""},
-        {"标题": "证监会发布新规：优化IPO审核流程，支持科技企业上市融资", "时间": today, "来源": "百度财经", "链接": ""},
         {"标题": "商务部：中美经贸磋商取得阶段性进展，双方同意继续对话", "时间": today, "来源": "央视财经新闻", "链接": ""},
-        {"标题": "A股三大指数集体收涨，半导体板块领涨，成交额突破万亿", "时间": today, "来源": "新浪环球滚动", "链接": ""},
-        {"标题": "光伏行业整合加速：多家龙头企业宣布扩产计划", "时间": yesterday, "来源": "百度财经", "链接": ""},
-        {"标题": "数字人民币试点范围扩大至全国17个城市，金融科技板块走强", "时间": yesterday, "来源": "央视财经新闻", "链接": ""},
-        {"标题": "国家发改委：推动新基建投资，5G基站建设目标超额完成", "时间": yesterday, "来源": "新浪环球滚动", "链接": ""},
-        {"标题": "稀土管理条例正式实施，新材料板块迎来估值重塑", "时间": yesterday, "来源": "百度财经", "链接": ""},
-        {"标题": "财政部：继续实施减税降费政策，预计全年减负超3万亿元", "时间": yesterday, "来源": "央视财经新闻", "链接": ""},
-        {"标题": "华为发布新一代AI芯片，国产算力替代加速推进", "时间": yesterday, "来源": "新浪环球滚动", "链接": ""},
-        {"标题": "银保监会：引导银行加大对制造业中长期贷款投放力度", "时间": yesterday, "来源": "百度财经", "链接": ""},
     ]
     return pd.DataFrame(demo_data)
 
@@ -96,10 +126,15 @@ def load_financial_news():
     
     if all_news:
         combined = pd.concat(all_news, ignore_index=True)
-        return combined, False  # False = 不是示例数据
+        return combined, "domestic"  # 国内实时数据
     
-    # 兜底：返回示例数据
-    return _get_demo_news(), True  # True = 是示例数据
+    # 第二优先级：国际 RSS 源（在海外服务器上生效）
+    rss_df = _fetch_rss_news()
+    if rss_df is not None and not rss_df.empty:
+        return rss_df, "international"  # 国际实时数据
+    
+    # 最终兜底：静态示例数据
+    return _get_demo_news(), "demo"
 
 @st.cache_data(ttl=3600)
 def load_research_reports():
@@ -188,10 +223,13 @@ def analyze_sentiment_en(text):
 st.subheader("📰 实时财经政策新闻")
 
 with st.spinner("正在抓取最新财经新闻..."):
-    df_news, is_demo_news = load_financial_news()
+    df_news, news_source = load_financial_news()
 
-if is_demo_news:
-    st.info("🌐 当前使用示例数据展示（海外服务器无法连接国内数据源）。在国内运行时将自动切换为实时新闻。")
+if news_source == "international":
+    st.success("🌍 已连接国际财经新闻源（Reuters / CNBC / MarketWatch），显示实时全球财经动态。")
+elif news_source == "demo":
+    st.info("🌐 当前使用示例数据展示。在国内运行时将自动切换为实时新闻。")
+# domestic 模式不需要额外提示
 
 if df_news is not None and not df_news.empty:
     # 显示新闻列表
@@ -318,9 +356,9 @@ st.subheader("🏦 东方财富研报聚合")
 st.caption("Research Report Aggregator via AkShare | A股最新机构研究报告")
 
 with st.spinner("加载研报数据..."):
-    df_reports, is_demo_reports = load_research_reports()
+    df_reports, report_source = load_research_reports()
 
-if is_demo_reports:
+if report_source:
     st.info("🌐 当前使用示例研报数据展示。在国内运行时将自动加载东方财富实时研报。")
 
 if df_reports is not None and not df_reports.empty:
@@ -341,4 +379,5 @@ else:
 
 # ── 页脚说明 ──
 st.markdown("---")
-st.caption("💡 提示：本页面在国内网络环境下将自动获取实时数据；海外部署时使用精选示例数据展示功能。")
+st.caption("💡 数据策略：国内网络 → AkShare 实时数据 | 海外部署 → Reuters/CNBC/MarketWatch RSS 实时数据 | 均不可用 → 精选示例数据")
+

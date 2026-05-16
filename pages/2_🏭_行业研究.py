@@ -89,8 +89,51 @@ def _load_with_cache(cache_key, fetch_func, ttl_hours=6):
     return None, "failed"
 
 
+# ── 示例数据生成（海外部署兜底）──────────────────────────────────
+def _generate_demo_etf(etf_code):
+    """生成模拟 ETF K 线数据用于海外展示"""
+    np.random.seed(hash(etf_code) % 2**31)
+    dates = pd.date_range(start='2023-01-01', end=pd.Timestamp.now(), freq='B')
+    n = len(dates)
+    base_price = {"512480": 1.2, "159840": 2.5, "515790": 0.8, "159761": 1.0, "159851": 0.9, "512800": 1.1}.get(etf_code, 1.0)
+    
+    prices = [base_price]
+    for _ in range(n - 1):
+        change = np.random.normal(0.0002, 0.018)
+        prices.append(prices[-1] * (1 + change))
+    
+    data = []
+    for i, date in enumerate(dates):
+        close = prices[i]
+        high = close * (1 + abs(np.random.normal(0, 0.01)))
+        low = close * (1 - abs(np.random.normal(0, 0.01)))
+        open_p = low + (high - low) * np.random.random()
+        vol = np.random.randint(50000000, 500000000)
+        pct = ((close / prices[i-1]) - 1) * 100 if i > 0 else 0
+        data.append({"日期": date, "开盘": round(open_p, 4), "收盘": round(close, 4),
+                     "最高": round(high, 4), "最低": round(low, 4),
+                     "成交额": vol, "涨跌幅": round(pct, 2)})
+    return pd.DataFrame(data)
+
+def _generate_demo_macro(indicator):
+    """生成模拟宏观数据"""
+    if indicator == 'pmi':
+        dates = pd.date_range(start='2020-01', periods=60, freq='MS')
+        values = [50 + np.random.normal(0.5, 1.2) for _ in range(60)]
+        return pd.DataFrame({"日期": dates, "制造业PMI": [round(v, 1) for v in values]})
+    elif indicator == 'cpi':
+        dates = pd.date_range(start='2020-01', periods=60, freq='MS')
+        values = [2.0 + np.random.normal(0, 0.8) for _ in range(60)]
+        return pd.DataFrame({"日期": dates, "CPI同比增长": [round(v, 1) for v in values]})
+    elif indicator == 'gdp':
+        years = [f"{y}年" for y in range(2010, 2026)]
+        values = [10.6, 9.5, 7.9, 7.8, 7.3, 7.0, 6.8, 6.9, 6.7, 6.0, 2.2, 8.4, 3.0, 5.2, 5.0, 4.8]
+        return pd.DataFrame({"年份": years, "GDP增速%": values})
+    return None
+
+
 def load_etf_data(etf_code):
-    """加载 ETF 历史行情（用 fund_etf_hist_em，比行业板块接口稳定得多）"""
+    """加载 ETF 历史行情（用 fund_etf_hist_em，海外自动降级为模拟数据）"""
     def fetch():
         df = ak.fund_etf_hist_em(
             symbol=etf_code, period="daily",
@@ -102,11 +145,15 @@ def load_etf_data(etf_code):
             df['日期'] = pd.to_datetime(df['日期'])
             return df
         return None
-    return _load_with_cache(f"etf_{etf_code}", fetch, ttl_hours=4)
+    
+    df, source = _load_with_cache(f"etf_{etf_code}", fetch, ttl_hours=4)
+    if source == "failed":
+        return _generate_demo_etf(etf_code), "demo"
+    return df, source
 
 
 def load_macro(indicator):
-    """加载宏观指标（PMI/CPI/GDP）"""
+    """加载宏观指标（PMI/CPI/GDP），海外自动降级"""
     api_map = {
         'pmi': ak.macro_china_pmi_yearly,
         'cpi': ak.macro_china_cpi_yearly,
@@ -116,7 +163,11 @@ def load_macro(indicator):
         df = api_map[indicator]()
         df.columns = [str(c) for c in df.columns]
         return df
-    return _load_with_cache(f"macro_{indicator}", fetch, ttl_hours=12)
+    
+    df, source = _load_with_cache(f"macro_{indicator}", fetch, ttl_hours=12)
+    if source == "failed":
+        return _generate_demo_macro(indicator), "demo"
+    return df, source
 
 
 # ══════════════════════════════════════════
@@ -136,7 +187,9 @@ for i, tab in enumerate(tabs):
         
         df_etf, source = load_etf_data(etf_info['etf'])
         
-        if source == "stale_cache":
+        if source == "demo":
+            st.info("🌐 当前显示模拟数据（海外服务器无法连接 AkShare）。国内运行时将自动加载真实行情。")
+        elif source == "stale_cache":
             st.info("📦 使用本地缓存数据（API 暂时不可用，数据可能不是最新）")
         elif source == "cache":
             st.caption("⚡ 数据来自本地缓存（快速加载）")
@@ -219,8 +272,10 @@ tab_pmi, tab_cpi, tab_gdp = st.tabs(["🏗️ PMI 制造业", "🛒 CPI 通胀",
 
 with tab_pmi:
     df_pmi, src = load_macro('pmi')
-    if src != "failed" and df_pmi is not None:
-        if src == "stale_cache":
+    if df_pmi is not None:
+        if src == "demo":
+            st.info("🌐 海外展示模拟数据，国内运行时将自动加载真实 PMI 数据")
+        elif src == "stale_cache":
             st.info("📦 使用缓存数据")
         try:
             numeric_cols = df_pmi.select_dtypes(include='number').columns.tolist()
@@ -241,8 +296,10 @@ with tab_pmi:
 
 with tab_cpi:
     df_cpi, src = load_macro('cpi')
-    if src != "failed" and df_cpi is not None:
-        if src == "stale_cache":
+    if df_cpi is not None:
+        if src == "demo":
+            st.info("🌐 海外展示模拟数据，国内运行时将自动加载真实 CPI 数据")
+        elif src == "stale_cache":
             st.info("📦 使用缓存数据")
         try:
             numeric_cols = df_cpi.select_dtypes(include='number').columns.tolist()
@@ -261,8 +318,10 @@ with tab_cpi:
 
 with tab_gdp:
     df_gdp, src = load_macro('gdp')
-    if src != "failed" and df_gdp is not None:
-        if src == "stale_cache":
+    if df_gdp is not None:
+        if src == "demo":
+            st.info("🌐 海外展示模拟数据，国内运行时将自动加载真实 GDP 数据")
+        elif src == "stale_cache":
             st.info("📦 使用缓存数据")
         try:
             numeric_cols = df_gdp.select_dtypes(include='number').columns.tolist()
